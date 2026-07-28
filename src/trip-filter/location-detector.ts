@@ -8,6 +8,13 @@ const overlaps = (a: DetectedLocation, start: number, end: number) => a.start < 
 const aliases = LOCATION_DICTIONARY.flatMap((location) => location.aliases.map((alias) => ({ location, alias: removeVietnameseAccents(alias.toLocaleLowerCase("vi-VN")) })))
   .sort((a, b) => b.alias.length - a.alias.length);
 const placeTypePattern = [...PLACE_TYPE_TERMS].map(removeVietnameseAccents).sort((a, b) => b.length - a.length).map(escapeRegex).join("|");
+const ambiguousAccentlessPlaceTypes = new Set(["cho", "quan"]);
+
+function isAmbiguousConversationWord(message: NormalizedMessage, start: number, matchedType: string) {
+  if (!ambiguousAccentlessPlaceTypes.has(matchedType)) return false;
+  const originalType = message.compact.slice(start, start + matchedType.length).toLocaleLowerCase("vi-VN");
+  return !["chợ", "quán", "quận"].includes(originalType);
+}
 
 export function detectLocations(message: NormalizedMessage): DetectedLocation[] {
   const haystack = removeVietnameseAccents(message.compact);
@@ -28,6 +35,7 @@ export function detectLocations(message: NormalizedMessage): DetectedLocation[] 
   const genericRegex = new RegExp(`(?<![\\p{L}\\d])(${placeTypePattern})(?![\\p{L}\\d])(?:\\s+(?:so\\s+)?[\\p{L}\\d][\\p{L}\\d.'/-]*){0,5}`, "gu");
   for (const match of haystack.matchAll(genericRegex)) {
     const start = match.index;
+    if (isAmbiguousConversationWord(message, start, match[1] ?? "")) continue;
     let value = match[0].replace(/\s+(?:tu|di|den|toi|ve|qua|xuong|len|sang|don|tra|gia|phi)\b.*$/u, "").trim();
     if (!value) continue;
     const end = start + value.length;

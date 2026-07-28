@@ -30,6 +30,14 @@ TRIP_FORWARD_LOW_SCORE=false
 
 Tin có địa điểm, số tiền hoặc loại xe `X4/X6/X7/4c/6c/7c` được báo ngay. Ảnh từ nhóm theo dõi cũng được báo ngay. Nội dung chữ được giữ nguyên trong cảnh báo Telegram; hệ thống không log toàn bộ nội dung, số điện thoại, cookie, token hoặc credential.
 
+Có thể chạy mô phỏng các mẫu được chấp nhận và bị từ chối:
+
+```bash
+npm run simulate:filter
+```
+
+Các nhóm tín hiệu được chấp nhận gồm ý định gọi xe (`cần xe`, `cần tài`, `ai nhận`), tuyến đường, địa điểm rõ ràng, giá/cuốc phí và loại xe. Các từ liên hệ đơn lẻ như `ib`, `alo`, `liên hệ` chỉ là thông tin bổ trợ, không tự tạo thành tin cuốc.
+
 ## Tính năng
 
 - Phiên Zalo độc lập theo từng Telegram user ID.

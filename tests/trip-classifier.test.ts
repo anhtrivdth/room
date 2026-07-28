@@ -53,6 +53,24 @@ describe("high-recall trip classifier", () => {
     expect(result.shouldForward, JSON.stringify(result, null, 2)).toBe(false);
   });
 
+  it.each([
+    "@Thảo Nguyễn cho a xin làm quen nha",
+    "@Lê Tâm là sao nữa chờ",
+    "@Hiếu Văn bip gê @Thảo Nguyễn xử lý :-DIG",
+    "@Lê Tâm cho xin gửi cái link hoa hồng human nha anh",
+    "@Quan Đại ok",
+    "@Thảo Nguyễn chờ sao",
+    "@Thọ Trần Ko sao ko sao a tâm sẽ tha cho e",
+    "@Chính ib r nhen",
+  ])("không chuyển tiếp hội thoại loãng từ nhóm: %s", (content) => {
+    const result = classifyTripMessage(content);
+    expect(result.shouldForward, JSON.stringify(result, null, 2)).toBe(false);
+  });
+
+  it.each(["Chợ Bến Thành về Q1", "Quán Ốc Đào -> Củ Chi", "Quận 1 về TSN"])("vẫn nhận loại địa điểm có dấu rõ ràng: %s", (content) => {
+    expect(classifyTripMessage(content).shouldForward).toBe(true);
+  });
+
   it("báo ngay khi có một địa danh đơn lẻ", () => {
     expect(classifyTripMessage("Củ Chi").shouldForward).toBe(true);
   });

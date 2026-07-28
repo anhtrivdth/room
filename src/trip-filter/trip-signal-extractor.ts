@@ -19,7 +19,9 @@ export function extractTripSignals(message: NormalizedMessage, route: RouteDetec
   const passenger = value.match(/(?<![\p{L}\d])(\d{1,2})\s*(?:khách|kh|người)(?![\p{L}\d])/iu);
   const luggage = first(value, /(?<![\p{L}\d])\d{1,2}\s*(?:vali|vl|kiện|hành lý)(?![\p{L}\d])/iu);
   const phoneNumber = first(value, /(?<!\d)(?:\+?84|0)(?:[ .-]?\d){8,10}(?!\d)/u);
-  const intentPatterns = ["cần xe", "cần tài", "cần tài xế", "tìm tài", "ai đi", "ai chạy", "ai nhận", "bác nào", "anh em nào", "có xe không", "có tài không", "nhận giúp", "chạy giúp", "hỗ trợ", "ghép khách", "ghép chuyến", "nhắn riêng", "inbox", "liên hệ", "gọi", "alo", "chốt"];
+  // Contact words are deliberately kept separate: "ib" or "alo" alone is common
+  // group conversation and must not count as both trip intent and contact evidence.
+  const intentPatterns = ["cần xe", "cần tài", "cần tài xế", "tìm tài", "ai đi", "ai chạy", "ai nhận", "bác nào", "anh em nào", "có xe không", "có tài không", "nhận giúp", "chạy giúp", "ghép khách", "ghép chuyến"];
   const intentSignals = intentPatterns.filter((signal) => value.includes(signal));
   const contactSignal = first(value, /(?<![\p{L}\d])(?:ib|inbox|nhắn riêng|liên hệ|gọi|alo|chốt)(?![\p{L}\d])/iu);
   const negativePatterns = ["bán xe", "mua xe", "tuyển tài xế", "cần tuyển", "việc làm", "tuyển dụng", "cho thuê xe", "bán hàng"];

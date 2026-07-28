@@ -35,7 +35,7 @@ export function detectRoute(message: NormalizedMessage): RouteDetection {
     const leftLocations = detectLocations(normalizeMessage(left));
     const rightLocations = detectLocations(normalizeMessage(right));
     const connectorIsStrong = movementWord.test(connector) || connector !== "/";
-    const symbolicRoute = /^(?:=>|->|<-|>>|>|→|➡️?|↔|--|-)$/u.test(connector)
+    const symbolicRoute = /^(?:=>|->|<-|>>|>|→|➡️?|↔)$/u.test(connector)
       && /[\p{L}]{2}/u.test(left) && /[\p{L}]{2}/u.test(right);
     if (!connectorIsStrong || (!leftLocations.length && !rightLocations.length && !symbolicRoute)) continue;
     const leftName = leftLocations.at(-1)?.canonicalName ?? left;

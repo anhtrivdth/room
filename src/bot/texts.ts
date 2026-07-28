@@ -1,0 +1,17 @@
+export const TEXT = {
+  loginIntro: "🔐 ĐĂNG NHẬP ZALO\n\nVui lòng quét mã QR bên dưới bằng ứng dụng Zalo để bắt đầu.\n\nMã QR sẽ hết hạn sau một khoảng thời gian.",
+  waitingExisting: "⏳ Một mã QR đăng nhập đang hoạt động. Vui lòng hoàn tất hoặc chờ mã hết hạn.",
+  scanned: "📱 Đã quét mã QR\n\nVui lòng xác nhận đăng nhập trên ứng dụng Zalo.",
+  success: "✅ ĐĂNG NHẬP THÀNH CÔNG\n\nTài khoản Zalo đã được kết nối với bot.\n\nVui lòng chọn chức năng muốn thực hiện:",
+  failed: "❌ ĐĂNG NHẬP THẤT BẠI\n\nKhông thể đăng nhập tài khoản Zalo.\n\nVui lòng thử lại.",
+  expired: "⌛ MÃ QR ĐÃ HẾT HẠN\n\nVui lòng tạo mã QR mới để tiếp tục.",
+  alreadyLoggedIn: "✅ Tài khoản Zalo đã được đăng nhập.\n\nBạn có thể mở menu để tiếp tục.",
+  notLoggedIn: "⚠️ Bạn chưa đăng nhập Zalo.\n\nVui lòng đăng nhập trước khi sử dụng chức năng này.",
+  menu: "📋 MENU ZALO\n\nChọn chức năng bạn muốn thực hiện:",
+  loadingConversations: "⏳ Đang tải danh sách trò chuyện...",
+  noFollowedGroups: "📌 CÁC NHÓM ĐANG THEO DÕI\n\nBạn chưa chọn nhóm nào để theo dõi.",
+  emptyConversations: "💬 DANH SÁCH NHÓM ZALO\n\nChưa tìm thấy nhóm nào.",
+  loadFailed: "❌ Không thể tải danh sách trò chuyện.\n\nPhiên đăng nhập có thể đã hết hạn hoặc kết nối Zalo gặp lỗi.",
+  logoutConfirm: "⚠️ XÁC NHẬN ĐĂNG XUẤT\n\nBạn có chắc muốn đăng xuất tài khoản Zalo khỏi bot không?",
+  loggedOut: "✅ ĐÃ ĐĂNG XUẤT\n\nPhiên Zalo đã được xóa khỏi bot.",
+} as const;

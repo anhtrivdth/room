@@ -15,7 +15,9 @@ npm test
 npm start
 ```
 
-Điền token BotFather vào `TELEGRAM_BOT_TOKEN`. Phiên được cô lập theo Telegram user ID và chỉ lưu trong bộ nhớ; khởi động lại tiến trình sẽ yêu cầu quét QR lại.
+Điền token BotFather vào `TELEGRAM_BOT_TOKEN`. Mỗi Telegram user ID có một phiên và listener Zalo riêng. Cookie Zalo chỉ lưu trong bộ nhớ nên khởi động lại tiến trình vẫn yêu cầu quét QR; liên kết Telegram–Zalo và danh sách nhóm theo dõi được lưu bền vững trong SQLite để tự khôi phục sau khi đăng nhập lại đúng tài khoản.
+
+Ứng dụng yêu cầu Node.js 22.5 trở lên và mặc định lưu dữ liệu tại `./data/bot.sqlite`. Có thể đổi đường dẫn bằng `BOT_DATA_PATH`. Khi listener mất mạng, bot tự thử kết nối lại sau 5, 15 và 30 giây. Nếu phiên bị Zalo kick, trùng Zalo Web hoặc không thể phục hồi, bot gửi nút đăng nhập lại cho đúng người dùng và giữ nguyên danh sách nhóm đã lưu.
 
 ## Bộ lọc cuốc xe
 

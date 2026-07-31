@@ -1,10 +1,11 @@
 import type { TelegramGateway } from "./gateway.js";
-import { acceptedTripKeyboard, acceptTripKeyboard, authKeyboard, conversationErrorKeyboard, conversationKeyboard, followedGroupsKeyboard, logoutKeyboard, menuKeyboard, openMenuKeyboard, retryAuthKeyboard } from "./keyboards.js";
+import { acceptedTripKeyboard, acceptTripKeyboard, authKeyboard, conversationErrorKeyboard, conversationKeyboard, followedGroupsKeyboard, listenerReloginKeyboard, logoutKeyboard, menuKeyboard, openMenuKeyboard, retryAuthKeyboard } from "./keyboards.js";
 import { TEXT } from "./texts.js";
 import { escapeHtml, renderConversationPage } from "../utils/telegram-message.js";
 import { logger } from "../utils/logger.js";
 import { ZaloSessionManager } from "../zalo/zalo-session-manager.js";
-import type { ZaloConversation, ZaloIncomingMessage, ZaloQrStatus } from "../zalo/types.js";
+import type { ZaloConversation, ZaloIncomingMessage, ZaloListenerEvent, ZaloQrStatus } from "../zalo/types.js";
+import { MemorySessionStore, type SessionStore, ZaloAccountAlreadyBoundError } from "../zalo/session-store.js";
 import { createHash, randomBytes } from "node:crypto";
 import { classifyTripMessage } from "../trip-filter/trip-classifier.js";
 import { renderTripAlert } from "../trip-filter/trip-alert.js";
@@ -32,7 +33,14 @@ export class BotController {
   private readonly tripFilterConfig = tripFilterConfigFromEnv();
   private readonly tripFilterMetrics = new TripFilterMetrics();
   private readonly tripAcceptActions = new Map<string, Map<string, TripAcceptAction>>();
-  constructor(private readonly sessions: ZaloSessionManager) {}
+  private readonly listenerReconnectAttempts = new Map<string, number>();
+  private readonly listenerReconnectTimers = new Map<string, NodeJS.Timeout>();
+  private readonly listenerAlerts = new Set<string>();
+  constructor(
+    private readonly sessions: ZaloSessionManager,
+    private readonly store: SessionStore = new MemorySessionStore(),
+    private readonly listenerReconnectDelaysMs: readonly number[] = [5_000, 15_000, 30_000],
+  ) {}
 
   async start(userId: string, gateway: TelegramGateway) {
     if (await this.sessions.isLoggedIn(userId)) {
@@ -90,11 +98,23 @@ export class BotController {
     if (!session) return;
     try {
       const result = await session.client.waitForLogin();
-      this.sessions.setStatus(userId, "logged_in", { zaloUserId: result.zaloUserId, zaloDisplayName: result.displayName });
+      if (!result.zaloUserId) throw new Error("Zalo login did not return an account ID");
+      this.store.saveBinding({ telegramUserId: userId, zaloUserId: result.zaloUserId, zaloDisplayName: result.displayName });
+      const followedGroups = this.store.getFollowedGroups(userId, result.zaloUserId);
+      this.sessions.setStatus(userId, "logged_in", {
+        zaloUserId: result.zaloUserId,
+        zaloDisplayName: result.displayName,
+        followedGroups,
+        listenerStatus: "connecting",
+        listenerReconnectAttempts: 0,
+      });
       await gateway.deleteMessage(qrMessageId);
       await gateway.editText(messageId, TEXT.success, markup(menuKeyboard()));
       try {
-        await session.client.startMessageListener((incoming) => this.handleIncomingMessage(userId, incoming, gateway));
+        await session.client.startMessageListener(
+          (incoming) => this.handleIncomingMessage(userId, incoming, gateway),
+          (event) => this.handleListenerEvent(userId, event, gateway),
+        );
         logger.info("Zalo group listener started", { telegramUserId: userId });
       } catch (listenerError) {
         logger.error("Zalo group listener failed to start", listenerError);
@@ -104,10 +124,111 @@ export class BotController {
       const current = this.sessions.get(userId)?.state.status;
       const expired = current === "expired";
       if (!expired) this.sessions.setStatus(userId, "error");
-      await gateway.editText(messageId, expired ? TEXT.expired : TEXT.failed, markup(retryAuthKeyboard()));
+      const conflict = error instanceof ZaloAccountAlreadyBoundError;
+      await gateway.editText(
+        messageId,
+        conflict ? "❌ Tài khoản Zalo này đang được liên kết với một Telegram ID khác. Vui lòng dùng tài khoản Zalo riêng." : (expired ? TEXT.expired : TEXT.failed),
+        markup(retryAuthKeyboard()),
+      );
       await this.sessions.remove(userId);
       logger.error("Zalo login failed", error);
     }
+  }
+
+  private handleListenerEvent(userId: string, event: ZaloListenerEvent, gateway: TelegramGateway) {
+    const session = this.sessions.get(userId);
+    if (!session || session.state.status !== "logged_in") return;
+    if (event.type === "connected") {
+      this.clearListenerRecovery(userId);
+      this.listenerAlerts.delete(userId);
+      this.sessions.setStatus(userId, "logged_in", {
+        listenerStatus: "connected",
+        listenerReconnectAttempts: 0,
+        listenerConnectedAt: new Date(),
+      });
+      logger.info("Zalo group listener connected", { telegramUserId: userId });
+      return;
+    }
+    if (event.type === "disconnected") {
+      this.sessions.setStatus(userId, "logged_in", { listenerStatus: "reconnecting" });
+      logger.info("Zalo group listener disconnected", { telegramUserId: userId, code: event.code });
+      return;
+    }
+    if (event.type === "error") {
+      logger.error("Zalo group listener error");
+      return;
+    }
+    logger.info("Zalo group listener closed", { telegramUserId: userId, code: event.code });
+    if (event.code === 3000 || event.code === 3003) {
+      const reason = event.code === 3000
+        ? "Zalo phát hiện một kết nối Web khác cho cùng tài khoản. Hãy đóng Zalo Web ở nơi khác rồi đăng nhập lại."
+        : "Zalo đã kết thúc phiên theo dõi hiện tại.";
+      void this.notifyListenerNeedsLogin(userId, gateway, reason);
+      return;
+    }
+    this.scheduleListenerReconnect(userId, gateway);
+  }
+
+  private scheduleListenerReconnect(userId: string, gateway: TelegramGateway) {
+    if (this.listenerReconnectTimers.has(userId) || !this.sessions.get(userId)) return;
+    const attempt = this.listenerReconnectAttempts.get(userId) ?? 0;
+    const delayMs = this.listenerReconnectDelaysMs[attempt];
+    if (delayMs == null) {
+      void this.notifyListenerNeedsLogin(userId, gateway, "Bot đã thử kết nối lại nhiều lần nhưng không thành công.");
+      return;
+    }
+    this.listenerReconnectAttempts.set(userId, attempt + 1);
+    this.sessions.setStatus(userId, "logged_in", { listenerStatus: "reconnecting", listenerReconnectAttempts: attempt + 1 });
+    const timer = setTimeout(() => {
+      this.listenerReconnectTimers.delete(userId);
+      void this.restartListener(userId, gateway);
+    }, delayMs);
+    timer.unref?.();
+    this.listenerReconnectTimers.set(userId, timer);
+    logger.info("Zalo group listener reconnect scheduled", { telegramUserId: userId, attempt: attempt + 1, delayMs });
+  }
+
+  private async restartListener(userId: string, gateway: TelegramGateway) {
+    const session = this.sessions.get(userId);
+    if (!session || session.state.status !== "logged_in") return;
+    try {
+      if (!(await session.client.isAuthenticated())) {
+        await this.notifyListenerNeedsLogin(userId, gateway, "Phiên đăng nhập Zalo đã hết hiệu lực.");
+        return;
+      }
+      await session.client.restartMessageListener();
+      logger.info("Zalo group listener reconnect started", { telegramUserId: userId });
+    } catch (error) {
+      logger.error("Zalo group listener reconnect failed", error);
+      this.scheduleListenerReconnect(userId, gateway);
+    }
+  }
+
+  private async notifyListenerNeedsLogin(userId: string, gateway: TelegramGateway, reason: string) {
+    const session = this.sessions.get(userId);
+    if (!session) return;
+    this.clearListenerRecovery(userId, false);
+    this.sessions.setStatus(userId, "logged_in", { listenerStatus: "needs_login" });
+    if (this.listenerAlerts.has(userId)) return;
+    this.listenerAlerts.add(userId);
+    await gateway.sendText(
+      `⚠️ KẾT NỐI THEO DÕI ZALO ĐÃ DỪNG\n\n${reason}\n\nDanh sách nhóm theo dõi của bạn đã được lưu. Đăng nhập lại đúng tài khoản Zalo để tự động khôi phục.`,
+      markup(listenerReloginKeyboard()),
+    ).catch((error) => logger.error("Telegram listener warning failed", error));
+  }
+
+  private clearListenerRecovery(userId: string, resetAttempts = true) {
+    const timer = this.listenerReconnectTimers.get(userId);
+    if (timer) clearTimeout(timer);
+    this.listenerReconnectTimers.delete(userId);
+    if (resetAttempts) this.listenerReconnectAttempts.delete(userId);
+  }
+
+  async relogin(userId: string, gateway: TelegramGateway) {
+    this.clearListenerRecovery(userId);
+    this.listenerAlerts.delete(userId);
+    await this.sessions.logout(userId);
+    await this.beginLogin(userId, gateway);
   }
 
   private async onQrStatus(userId: string, messageId: number, status: ZaloQrStatus, gateway: TelegramGateway) {
@@ -177,6 +298,7 @@ export class BotController {
       return;
     }
     this.sessions.setStatus(userId, "logged_in", { followedGroups: [...followedGroups, { id: group.id, name: group.name }] });
+    if (session.state.zaloUserId) this.store.addFollowedGroup(userId, session.state.zaloUserId, { id: group.id, name: group.name });
     await gateway.sendText(
       `✅ ĐÃ THÊM NHÓM THEO DÕI\n\nNhóm: ${group.name}\nID: ${group.id}\n\nBạn có thể tiếp tục chọn thêm nhóm.`,
       markup(menuKeyboard()),
@@ -210,6 +332,7 @@ export class BotController {
       return;
     }
     this.sessions.setStatus(userId, "logged_in", { followedGroups: followedGroups.filter((_, groupIndex) => groupIndex !== index) });
+    if (session.state.zaloUserId) this.store.removeFollowedGroup(userId, session.state.zaloUserId, removed.id);
     await gateway.answerCallback(`Đã bỏ theo dõi ${removed.name}`);
     await this.showFollowedGroups(userId, gateway, messageId);
   }
@@ -308,6 +431,8 @@ export class BotController {
     this.conversationCache.delete(userId);
     this.seenMessageIds.delete(userId);
     this.tripAcceptActions.delete(userId);
+    this.clearListenerRecovery(userId);
+    this.listenerAlerts.delete(userId);
     await this.sessions.logout(userId);
     await gateway.sendText(TEXT.loggedOut, markup(authKeyboard()));
   }

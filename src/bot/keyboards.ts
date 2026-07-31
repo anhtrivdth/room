@@ -3,6 +3,7 @@ import type { ZaloConversation } from "../zalo/types.js";
 
 export const authKeyboard = () => Markup.inlineKeyboard([Markup.button.callback("🔐 Đăng nhập Zalo", "auth:new")]);
 export const retryAuthKeyboard = () => Markup.inlineKeyboard([Markup.button.callback("🔄 Tạo mã QR mới", "auth:new")]);
+export const listenerReloginKeyboard = () => Markup.inlineKeyboard([Markup.button.callback("🔐 Đăng nhập lại", "auth:relogin")]);
 export const openMenuKeyboard = () => Markup.inlineKeyboard([Markup.button.callback("📋 Mở menu", "menu:open")]);
 export const menuKeyboard = () => Markup.inlineKeyboard([
   [Markup.button.callback("💬 Tải danh sách trò chuyện", "conv:load")],

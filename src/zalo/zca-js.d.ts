@@ -18,7 +18,13 @@ declare module "zca-js" {
   export class API {
     listener: {
       on(event: "message", callback: (message: ZcaMessage) => unknown): unknown;
+      on(event: "connected", callback: () => unknown): unknown;
+      on(event: "disconnected" | "closed", callback: (code: number, reason: string) => unknown): unknown;
+      on(event: "error", callback: (error: unknown) => unknown): unknown;
       off(event: "message", callback: (message: ZcaMessage) => unknown): unknown;
+      off(event: "connected", callback: () => unknown): unknown;
+      off(event: "disconnected" | "closed", callback: (code: number, reason: string) => unknown): unknown;
+      off(event: "error", callback: (error: unknown) => unknown): unknown;
       start(options?: { retryOnClose?: boolean }): void;
       stop(): void;
     };

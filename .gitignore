@@ -5,6 +5,7 @@ dist/
 coverage/
 *.log
 *.pid
+data/
 *.tsbuildinfo
 qr.png
 .DS_Store

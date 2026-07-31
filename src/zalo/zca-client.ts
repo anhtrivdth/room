@@ -1,5 +1,5 @@
 import { LoginQRCallbackEventType, ThreadType, Zalo, type API, type ZcaMessage } from "zca-js";
-import type { ZaloClient, ZaloConversation, ZaloIncomingMessage, ZaloLoginResult, ZaloQrLoginResult, ZaloQrStatus } from "./types.js";
+import type { ZaloClient, ZaloConversation, ZaloIncomingMessage, ZaloListenerEvent, ZaloLoginResult, ZaloQrLoginResult, ZaloQrStatus } from "./types.js";
 
 type QrActions = { abort: () => unknown };
 type LooseRecord = Record<string, unknown>;
@@ -18,6 +18,11 @@ export class ZcaJsClient implements ZaloClient {
   private displayName?: string;
   private destroyed = false;
   private messageHandler?: (message: ZcaMessage) => void;
+  private listenerEventHandler?: (event: ZaloListenerEvent) => void;
+  private readonly connectedHandler = () => this.listenerEventHandler?.({ type: "connected" });
+  private readonly disconnectedHandler = (code: number, reason: string) => this.listenerEventHandler?.({ type: "disconnected", code, reason });
+  private readonly closedHandler = (code: number, reason: string) => this.listenerEventHandler?.({ type: "closed", code, reason });
+  private readonly errorHandler = () => this.listenerEventHandler?.({ type: "error" });
 
   constructor(private readonly qrTimeoutMs = 110_000) {}
 
@@ -92,22 +97,43 @@ export class ZcaJsClient implements ZaloClient {
     }
   }
 
-  async startMessageListener(onMessage: (message: ZaloIncomingMessage) => void | Promise<void>) {
+  async startMessageListener(
+    onMessage: (message: ZaloIncomingMessage) => void | Promise<void>,
+    onEvent?: (event: ZaloListenerEvent) => void,
+  ) {
     const api = this.requireApi();
     if (this.messageHandler) return;
+    this.listenerEventHandler = onEvent;
     this.messageHandler = (message) => {
       if (message.type !== ThreadType.Group || message.isSelf) return;
       const normalized = this.normalizeIncomingMessage(message);
       if (normalized) void Promise.resolve(onMessage(normalized)).catch(() => undefined);
     };
     api.listener.on("message", this.messageHandler);
+    api.listener.on("connected", this.connectedHandler);
+    api.listener.on("disconnected", this.disconnectedHandler);
+    api.listener.on("closed", this.closedHandler);
+    api.listener.on("error", this.errorHandler);
+    api.listener.start({ retryOnClose: true });
+  }
+
+  async restartMessageListener() {
+    const api = this.requireApi();
+    if (!this.messageHandler) throw new Error("Zalo message listener has not been initialized");
     api.listener.start({ retryOnClose: true });
   }
 
   async stopMessageListener() {
-    if (this.api && this.messageHandler) this.api.listener.off("message", this.messageHandler);
-    this.api?.listener.stop();
+    if (this.api) {
+      if (this.messageHandler) this.api.listener.off("message", this.messageHandler);
+      this.api.listener.off("connected", this.connectedHandler);
+      this.api.listener.off("disconnected", this.disconnectedHandler);
+      this.api.listener.off("closed", this.closedHandler);
+      this.api.listener.off("error", this.errorHandler);
+      this.api.listener.stop();
+    }
     this.messageHandler = undefined;
+    this.listenerEventHandler = undefined;
   }
 
   async replyToGroupMessage(message: ZaloIncomingMessage, replyText: string) {

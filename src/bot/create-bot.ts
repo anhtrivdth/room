@@ -29,6 +29,7 @@ export function createBot(token: string, controller: BotController) {
     const data = ctx.callbackQuery.data;
     const messageId = ctx.callbackQuery.message?.message_id;
     if (data === "auth:new") await controller.start(userId, gateway);
+    else if (data === "auth:relogin") await controller.relogin(userId, gateway);
     else if (data === "menu:open") await controller.menu(userId, gateway);
     else if (data === "conv:load") await controller.loadConversations(userId, gateway);
     else if (data === "groups:followed") await controller.showFollowedGroups(userId, gateway);

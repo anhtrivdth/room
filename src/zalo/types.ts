@@ -13,6 +13,9 @@ export type ZaloSessionState = {
   zaloUserId?: string;
   zaloDisplayName?: string;
   followedGroups?: Array<{ id: string; name: string }>;
+  listenerStatus?: "disconnected" | "connecting" | "connected" | "reconnecting" | "needs_login";
+  listenerReconnectAttempts?: number;
+  listenerConnectedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -21,6 +24,11 @@ export type ZaloQrStatus = "waiting_scan" | "waiting_confirm" | "expired" | "dec
 
 export type ZaloQrLoginResult = { image: Buffer; expiresAt: Date };
 export type ZaloLoginResult = { success: true; zaloUserId?: string; displayName?: string };
+
+export type ZaloListenerEvent =
+  | { type: "connected" }
+  | { type: "disconnected" | "closed"; code: number; reason: string }
+  | { type: "error" };
 
 export type ZaloConversation = {
   id: string;
@@ -65,7 +73,11 @@ export interface ZaloClient {
   logout(): Promise<void>;
   destroy(): Promise<void>;
   isAuthenticated(): Promise<boolean>;
-  startMessageListener(onMessage: (message: ZaloIncomingMessage) => void | Promise<void>): Promise<void>;
+  startMessageListener(
+    onMessage: (message: ZaloIncomingMessage) => void | Promise<void>,
+    onEvent?: (event: ZaloListenerEvent) => void,
+  ): Promise<void>;
+  restartMessageListener(): Promise<void>;
   stopMessageListener(): Promise<void>;
   replyToGroupMessage(message: ZaloIncomingMessage, text: string): Promise<void>;
 }

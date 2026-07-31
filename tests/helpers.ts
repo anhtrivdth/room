@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import type { TelegramGateway, SendOptions } from "../src/bot/gateway.js";
-import type { ZaloClient, ZaloConversation, ZaloIncomingMessage, ZaloLoginResult, ZaloQrLoginResult, ZaloQrStatus } from "../src/zalo/types.js";
+import type { ZaloClient, ZaloConversation, ZaloIncomingMessage, ZaloListenerEvent, ZaloLoginResult, ZaloQrLoginResult, ZaloQrStatus } from "../src/zalo/types.js";
 
 export class FakeGateway implements TelegramGateway {
   sent: Array<{ id: number; text: string; options?: SendOptions }> = [];
@@ -28,6 +28,7 @@ export class MockZaloClient implements ZaloClient {
   conversationError?: Error;
   onStatus?: (status: ZaloQrStatus) => void;
   onMessage?: (message: ZaloIncomingMessage) => void | Promise<void>;
+  onListenerEvent?: (event: ZaloListenerEvent) => void;
   createQrLogin = vi.fn(async (onStatus?: (status: ZaloQrStatus) => void): Promise<ZaloQrLoginResult> => {
     this.onStatus = onStatus;
     if (this.qrError) throw this.qrError;
@@ -39,7 +40,11 @@ export class MockZaloClient implements ZaloClient {
   logout = vi.fn(async () => { this.authenticated = false; });
   destroy = vi.fn(async () => { this.authenticated = false; });
   isAuthenticated = vi.fn(async () => this.authenticated);
-  startMessageListener = vi.fn(async (onMessage: (message: ZaloIncomingMessage) => void | Promise<void>) => { this.onMessage = onMessage; });
+  startMessageListener = vi.fn(async (
+    onMessage: (message: ZaloIncomingMessage) => void | Promise<void>,
+    onEvent?: (event: ZaloListenerEvent) => void,
+  ) => { this.onMessage = onMessage; this.onListenerEvent = onEvent; onEvent?.({ type: "connected" }); });
+  restartMessageListener = vi.fn(async () => undefined);
   stopMessageListener = vi.fn(async () => { this.onMessage = undefined; });
   replyToGroupMessage = vi.fn(async (_message: ZaloIncomingMessage, _text: string) => undefined);
 }

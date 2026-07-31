@@ -4,6 +4,7 @@ import { TEXT } from "../src/bot/texts.js";
 import { ZaloSessionManager } from "../src/zalo/zalo-session-manager.js";
 import { renderConversationPage } from "../src/utils/telegram-message.js";
 import type { ZaloConversation } from "../src/zalo/types.js";
+import { MemorySessionStore } from "../src/zalo/session-store.js";
 import { FakeGateway, MockZaloClient } from "./helpers.js";
 
 function setup() {
@@ -266,5 +267,59 @@ describe("menu, conversations và logout", () => {
       expect.stringContaining("Củ Chi"),
       expect.stringContaining("400k"),
     ]));
+  });
+});
+
+describe("khôi phục nhóm và listener theo từng người dùng", () => {
+  it("tự nạp lại nhóm khi cùng Telegram ID đăng nhập đúng Zalo ID cũ", async () => {
+    const client = new MockZaloClient();
+    const sessions = new ZaloSessionManager(() => client);
+    const store = new MemorySessionStore();
+    store.saveBinding({ telegramUserId: "1", zaloUserId: "z1" });
+    store.addFollowedGroup("1", "z1", { id: "g1", name: "Nhóm đã lưu" });
+    const controller = new BotController(sessions, store);
+    const gateway = new FakeGateway();
+
+    await controller.start("1", gateway);
+    await vi.waitFor(() => expect(sessions.get("1")?.state.status).toBe("logged_in"));
+
+    expect(sessions.get("1")?.state.followedGroups).toEqual([{ id: "g1", name: "Nhóm đã lưu" }]);
+    expect(sessions.get("1")?.state.listenerStatus).toBe("connected");
+  });
+
+  it("bị Zalo kick thì chỉ cảnh báo phiên tương ứng và giữ nhóm đã lưu", async () => {
+    const client = new MockZaloClient();
+    const sessions = new ZaloSessionManager(() => client);
+    const store = new MemorySessionStore();
+    store.addFollowedGroup("1", "z1", { id: "g1", name: "Nhóm đã lưu" });
+    const controller = new BotController(sessions, store, [1]);
+    const gateway = new FakeGateway();
+
+    await controller.start("1", gateway);
+    await vi.waitFor(() => expect(sessions.get("1")?.state.listenerStatus).toBe("connected"));
+    client.onListenerEvent?.({ type: "closed", code: 3003, reason: "kicked" });
+    await vi.waitFor(() => expect(gateway.sent.some((item) => item.text.includes("KẾT NỐI THEO DÕI ZALO ĐÃ DỪNG"))).toBe(true));
+
+    expect(sessions.get("1")?.state.listenerStatus).toBe("needs_login");
+    expect(store.getFollowedGroups("1", "z1")).toEqual([{ id: "g1", name: "Nhóm đã lưu" }]);
+  });
+
+  it("lỗi mạng thì thử tạo lại listener trước khi yêu cầu QR", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new MockZaloClient();
+      const sessions = new ZaloSessionManager(() => client);
+      const controller = new BotController(sessions, new MemorySessionStore(), [5]);
+      const gateway = new FakeGateway();
+      await controller.start("1", gateway);
+      await vi.advanceTimersByTimeAsync(1);
+      client.onListenerEvent?.({ type: "closed", code: 1006, reason: "network" });
+      await vi.advanceTimersByTimeAsync(5);
+
+      expect(client.restartMessageListener).toHaveBeenCalledOnce();
+      expect(gateway.sent.some((item) => item.text.includes("KẾT NỐI THEO DÕI ZALO ĐÃ DỪNG"))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
